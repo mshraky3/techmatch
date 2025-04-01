@@ -2,9 +2,10 @@
   "name": "techmatch",
   "version": "1.0.0",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js",
+    "dev": "nodemon api.js",
     "update-prices": "node -e \"require('./priceUpdater').updateAllPrices()\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
