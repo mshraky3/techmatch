@@ -1,85 +1,89 @@
 import axios from 'axios';
-import dotenv from 'dotenv';
+import { load } from 'cheerio';
+import express from "express";
+import cors from "cors"
 
-dotenv.config();
-
-const URL = 'https://www.jarir.com/sa-en/catalogsearch/result?search=';
-
-// Function to fetch data from Jarir
-async function fetchData(query) {
-  try {
-    const response = await axios.get(URL + query);
-    return response.data;
-  } catch (error) {
-    console.error(error);
-    throw error;
-  }
-}
-
-// Function to parse product information from HTML
-function parseProductInfo(html) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-
-  // Example of extracting product details
-  const products = Array.from(doc.querySelectorAll('.product-tile__product-labelmt4'))
-    .map(product => ({
-      title: product.querySelector('.product-title__title').textContent.trim(),
-      info: Array.from(product.querySelectorAll('.product-title__info--box')).map(info => info.textContent.trim()),
-      price: product.querySelector('.price__currency').textContent.trim() + ' ' + product.querySelector('.price').textContent.trim()
-    }));
-
-  return products;
-}
-
-// Function to filter products based on user-defined criteria
-function filterProducts(products, criteria) {
-  return products.filter(product => {
-    const { releaseYear, company, price, screenSizeLabel, cameraQualityLabel, batteryLifeLabel, isNew } = criteria;
-
-    if (releaseYear && product.releaseYear !== releaseYear) return false;
-    if (company && product.company !== company) return false;
-    if (price.min && product.price < price.min) return false;
-    if (price.max && product.price > price.max) return false;
-    if (screenSizeLabel && !product.screenSize.includes(screenSizeLabel)) return false;
-    if (cameraQualityLabel && !product.cameraQuality.includes(cameraQualityLabel)) return false;
-    if (batteryLifeLabel && !product.batteryLife.includes(batteryLifeLabel)) return false;
-    if (isNew && !product.isNew) return false;
-
-    return true;
-  });
-}
-
-// Main server code
-import  express from 'express';
 const app = express();
 
-app.get('/', async (req, res) => {
+var corsOptions = {
+  origin: '*',
+}
+cors(corsOptions)
+app.use(cors())
+app.use(express.static('public'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+
+
+app.post("/" , async (req , res)=>{
+  console.log(req.body)
+  const {minYear ,  brands ,  minPrice , maxPrice , storageSize , minDisplay ,maxDisplay , minBattery ,maxBattery} = req.body
   try {
-    const query = req.query.q; // Assuming the search term is passed via query parameter
-    const products = await fetchData(query);
+    const url = `https://www.gsmarena.com/results.php3?nYearMin=${minYear}&nPriceMin=450&sMakers=${brands}&sAvailabilities=1`;
+    console.log(url)
+    const response = await axios.get(url);
+    const html = response.data;
 
-    const parsedProducts = parseProductInfo(products);
-    const filteredProducts = filterProducts(parsedProducts, {
-      releaseYear: parseInt(req.query.releaseYear),
-      company: req.query.company,
-      price: {
-        min: parseInt(req.query.priceMin),
-        max: parseInt(req.query.priceMax)
-      },
-      screenSizeLabel: req.query.screenSizeLabel,
-      cameraQualityLabel: req.query.cameraQualityLabel,
-      batteryLifeLabel: req.query.batteryLifeLabel,
-      isNew: req.query.isNew === 'true'
+    const $ = load(html);
+    const makersElements = $('.makers ul li').toArray();
+
+    const items = makersElements.map(makerElement => {
+      const element = $(makerElement);
+      const link = element.find('a').attr('href');
+      const imgSrc = element.find('img').attr('src');
+      const name = link.split("_")[0];
+      const model = element.find('span').text().trim(); // More reliable than splitting the link
+
+      return {
+        imgSrc,
+        name,
+        model,
+        link
+      };
     });
-
-    res.json(filteredProducts);
+    console.log(items)
+    res.json(items)
   } catch (error) {
-    res.status(500).json({ error: 'An error occurred' });
+    console.error("Error fetching data:", error.message);
+    res.status(500).send("Internal Server Error");
   }
-});
+  
+})
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+
+
+app.post("/more" , async (req, res)=>{
+  try {
+    const url =  "https://www.gsmarena.com/" + req.body.link
+    const response = await axios.get(url);
+    const html = response.data;
+    const $ = load(html);
+    const makersElements = $('.makers ul li').toArray();
+
+    const items = makersElements.map(makerElement => {
+      const element = $(makerElement);
+      const link = element.find('a').attr('href');
+      const imgSrc = element.find('img').attr('src');
+      const name = link.split("_")[0];
+      const model = element.find('span').text().trim(); // More reliable than splitting the link
+
+      return {
+        imgSrc,
+        name,
+        model,
+        link
+      };
+    });
+    console.log(items)
+    res.send("items")
+  } catch (error) {
+    console.error("Error fetching data:", error.message);
+    res.status(500).send("Internal Server Error");
+  }
+  
+})
+
+app.listen(3000, () => {
+  console.log("Server is running on port 3000");
 });
