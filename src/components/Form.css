@@ -132,3 +132,10 @@
     color: #dc3545;
     margin-top: 10px;
   }
+
+
+  .device-info .price {
+    font-weight: bold;
+    color: #2c3e50;
+    margin: 8px 0;
+  }

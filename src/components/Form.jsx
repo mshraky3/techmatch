@@ -14,13 +14,8 @@ const Form = () => {
     minBattery: '',
     maxBattery: ''
   });
-
   const [results, setResults] = useState(null);
-  const [more, setmore] = useState(false);
-
   const [loading, setLoading] = useState(false);
-
-
 
   const brandIdMap = {
     'Samsung': 9,
@@ -30,6 +25,7 @@ const Form = () => {
     'Oppo': 82,
     'Honor': 121
   };
+
   const brandsOptions = Object.keys(brandIdMap);
 
   const storageOptions = [
@@ -55,6 +51,7 @@ const Form = () => {
         : prev.brands.filter(b => b !== brandValue)
     }));
   };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -64,7 +61,7 @@ const Form = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await axios.post("http://localhost:3000/", formData);
+      const response = await axios.post("http://localhost:3000/", { ...formData, getDetails: true });
       setResults(response.data);
     } catch (error) {
       console.error("Error fetching results:", error);
@@ -73,17 +70,7 @@ const Form = () => {
       setLoading(false);
     }
   };
-  const handleSpecsClick = async (e, link) => {
-    e.preventDefault();
-    try {
-      const response = await axios.post("http://localhost:3000/more", { link });
-      
-      setmore(response.data);
-    } catch (error) {
-      console.error("Error fetching detailed specs:", error);
-      alert("Error loading specifications. Please try again.");
-    }
-  };
+
   return (
     <div className="container">
       <form onSubmit={handleSubmit} className="filter-form">
@@ -116,7 +103,6 @@ const Form = () => {
             ))}
           </div>
         </div>
-
         <div className="form-group">
           <label>Price Range ($):</label>
           <div className="range-group">
@@ -137,7 +123,6 @@ const Form = () => {
             />
           </div>
         </div>
-
         <div className="form-group">
           <label>Storage Size:</label>
           <select
@@ -152,7 +137,6 @@ const Form = () => {
             ))}
           </select>
         </div>
-
         <div className="form-group">
           <label>Display Size (inches):</label>
           <div className="range-group">
@@ -179,7 +163,6 @@ const Form = () => {
             />
           </div>
         </div>
-
         <div className="form-group">
           <label>Battery Size (mAh):</label>
           <div className="range-group">
@@ -187,8 +170,8 @@ const Form = () => {
               type="number"
               name="minBattery"
               placeholder="Min (3000)"
-              min="3000"
-              max="7000"
+              min="1000"
+              max="8000"
               value={formData.minBattery}
               onChange={handleChange}
             />
@@ -204,12 +187,10 @@ const Form = () => {
             />
           </div>
         </div>
-
         <button type="submit" className="submit-btn" disabled={loading}>
           {loading ? 'Searching...' : 'Filter Devices'}
         </button>
       </form>
-
       {results && (
         <div className="results-section">
           <h2>Found {results.length} devices</h2>
@@ -227,12 +208,14 @@ const Form = () => {
                 <div className="device-info">
                   <h3>{device.model}</h3>
                   <p className="brand">{device.name}</p>
+                  {device.msrp && <p>MSRP: {device.msrp}</p>}
+                  {device.displaySize && <p>Display Size: {device.displaySize}</p>}
+                  {device.batteryCapacity && <p>Battery Capacity: {device.batteryCapacity}</p>}
                   <a
                     href={`https://www.gsmarena.com/${device.link}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="specs-link"
-                    onClick={(e) => handleSpecsClick(e, device.link)}
                   >
                     View Full Specifications
                   </a>
