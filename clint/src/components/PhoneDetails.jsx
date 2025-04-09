@@ -7,19 +7,18 @@ const PhoneDetails = ({ phone, onClose }) => {
   return (
     <div className="phone-details">
       <div className="details-header">
-        <h2>{phone.name}</h2>
+        <h2>{phone.name} {phone.model}</h2>
         <button className="close-button" onClick={onClose}>×</button>
       </div>
 
       <div className="details-content">
         <div className="details-image">
-          <img src={phone.image} alt={phone.name} />
+          <img src={phone.imgSrc} alt={`${phone.name} ${phone.model}`} />
         </div>
 
         <div className="details-info">
           <div className="price-section">
-            <h3>Price: {phone.price}</h3>
-            <p className="currency-note">(Prices are converted to USD)</p>
+            <h3>Price: {phone.priceText || 'N/A'}</h3>
           </div>
 
           <div className="specs-section">

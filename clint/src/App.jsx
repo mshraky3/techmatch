@@ -20,6 +20,7 @@ function App() {
         body: JSON.stringify(searchParams),
       });
       const data = await response.json();
+      console.log(data)
       setPhones(data);
     } catch (error) {
       setError('Failed to fetch phone data. Please try again later.');
