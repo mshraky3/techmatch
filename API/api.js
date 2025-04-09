@@ -44,55 +44,90 @@ app.post("/search", async (req, res) => {
   // Convert SAR prices to USD for searching
   const minPriceUSD = await convertSARtoUSD(minPriceSAR);
   const maxPriceUSD = await convertSARtoUSD(maxPriceSAR);
-
+  
   try {
     // Try GSMArena first
     const gsmUrl = `https://www.gsmarena.com/results.php3?nYearMin=${minYear}&nPriceMin=${minPriceUSD}&nPriceMax=${maxPriceUSD}&sMakers=${brands}&DisplayInchesMin=${minDisplay}&fDisplayInchesMax=${maxDisplay}&nIntMemMin=${storageSize * 1000}&nBatCapacityMin=${minBattery}&nBatCapacityMax=${maxBattery}&sAvailabilities=1`;
     
-    const gsmResponse = await axios.get(gsmUrl);
-    const gsmHtml = gsmResponse.data;
-    const $ = load(gsmHtml);
-    
-    const phones = [];
-    $('.makers ul li').each((_, element) => {
-      const $element = $(element);
-      const link = $element.find('a').attr('href');
-      const imgSrc = $element.find('img').attr('src');
-      const name = link.split('_')[0];
-      const model = $element.find('span').text().trim();
+    let gsmResponse;
+    try {
+      gsmResponse = await axios.get(gsmUrl);
+      if (gsmResponse.status !== 200 || gsmResponse.status === 429) {
+        throw new Error('GSMArena request failed');
+      }
+    } catch (error) {
+      console.log('GSMArena request failed, switching to PhoneArena');
+      // Continue to PhoneArena
+    }
+
+    // Only process GSMArena if we got a successful response
+    if (gsmResponse && gsmResponse.status === 200) {
+
+      const gsmHtml = gsmResponse.data;
+      const $ = load(gsmHtml);
       
-      phones.push({
-        source: 'gsmarena',
-        imgSrc,
-        name,
-        model,
-        link: `https://www.gsmarena.com/${link}`,
-        price: null // Will be fetched from details page
+      const phones = [];
+      $('.makers ul li').each((_, element) => {
+        const $element = $(element);
+        const link = $element.find('a').attr('href');
+        const imgSrc = $element.find('img').attr('src');
+        const name = link.split('_')[0];
+        const model = $element.find('span').text().trim();
+        
+        phones.push({
+          source: 'gsmarena',
+          imgSrc,
+          name,
+          model,
+          link: `https://www.gsmarena.com/${link}`,
+          price: null
+        });
       });
-    });
 
-    if (phones.length > 0) {
-      // Fetch prices for GSMArena phones
-      const phonesWithPrices = await Promise.all(phones.map(async (phone) => {
-        try {
-          const detailsResponse = await axios.get(phone.link);
-          const $details = load(detailsResponse.data);
-          const priceText = $details.find('td:contains("Price")').next().text().trim();
-          const priceUSD = parseFloat(priceText.replace(/[^0-9.]/g, ''));
-          const priceSAR = await convertUSDtoSAR(priceUSD);
-          
-          return {
-            ...phone,
-            price: priceSAR,
-            priceText: `${priceSAR.toFixed(2)} SAR`
-          };
-        } catch (error) {
-          console.error(`Error fetching price for ${phone.model}:`, error);
-          return phone;
-        }
-      }));
+      if (phones.length > 0) {
+        // Fetch prices for GSMArena phones
+        const phonesWithPrices = await Promise.all(phones.map(async (phone) => {
+          try {
+            const detailsResponse = await axios.get(phone.link);
+            if (detailsResponse.status !== 200 || detailsResponse.status === 429) {
+              throw new Error('Details request failed');
+            }
+            const $details = load(detailsResponse.data);
+            const priceText = $details.find('td:contains("Price")').next().text().trim();
+            const priceUSD = parseFloat(priceText.replace(/[^0-9.]/g, ''));
+            const priceSAR = await convertUSDtoSAR(priceUSD);
+            
+            return {
+              ...phone,
+              price: priceSAR,
+              priceText: `${priceSAR.toFixed(2)} SAR`,
+              image: phone.imgSrc,
+              brand: phone.name,
+              year: minYear,
+              storage: `${storageSize}GB`,
+              display: `${minDisplay}-${maxDisplay} inches`,
+              battery: `${minBattery}-${maxBattery} mAh`,
+              features: ['4G LTE', 'Wi-Fi', 'Bluetooth', 'GPS']
+            };
+          } catch (error) {
+            console.error(`Error fetching price for ${phone.model}:`, error);
+            return {
+              ...phone,
+              price: 'N/A',
+              priceText: 'Price not available',
+              image: phone.imgSrc,
+              brand: phone.name,
+              year: minYear,
+              storage: `${storageSize}GB`,
+              display: `${minDisplay}-${maxDisplay} inches`,
+              battery: `${minBattery}-${maxBattery} mAh`,
+              features: ['4G LTE', 'Wi-Fi', 'Bluetooth', 'GPS']
+            };
+          }
+        }));
 
-      return res.json(phonesWithPrices);
+        return res.json(phonesWithPrices);
+      }
     }
 
     // If GSMArena fails, try PhoneArena
@@ -122,49 +157,81 @@ app.post("/search", async (req, res) => {
     }
 
     const phoneArenaUrl = `https://www.phonearena.com/phones/manufacturers/${brandsList.join(',')}?${queryParams.join('&')}`;
-    const phoneArenaResponse = await axios.get(phoneArenaUrl);
-    const $phoneArena = load(phoneArenaResponse.data);
-
-    const phoneArenaPhones = [];
-    $phoneArena('.widget.widget-tilePhoneCard').each((_, element) => {
-      const $element = $(element);
-      const link = $element.find('a').attr('href');
-      const titleText = $element.find('.caption .title').text().trim();
-      const [company, ...modelParts] = titleText.split(' ');
-      const model = modelParts.join(' ');
-      const imgSrc = $element.find('picture.square img').attr('src');
-
-      phoneArenaPhones.push({
-        source: 'phonearena',
-        imgSrc,
-        name: company,
-        model,
-        link,
-        price: null
-      });
-    });
-
-    // Fetch prices for PhoneArena phones
-    const phoneArenaPhonesWithPrices = await Promise.all(phoneArenaPhones.map(async (phone) => {
-      try {
-        const detailsResponse = await axios.get(phone.link);
-        const $details = load(detailsResponse.data);
-        const priceText = $details.find('th:contains("MSRP:")').next().text().trim();
-        const priceUSD = parseFloat(priceText.replace(/[^0-9.]/g, ''));
-        const priceSAR = await convertUSDtoSAR(priceUSD);
-
-        return {
-          ...phone,
-          price: priceSAR,
-          priceText: `${priceSAR.toFixed(2)} SAR`
-        };
-      } catch (error) {
-        console.error(`Error fetching price for ${phone.model}:`, error);
-        return phone;
+    console.log(phoneArenaUrl);
+    
+    try {
+      const phoneArenaResponse = await axios.get(phoneArenaUrl);
+      if (phoneArenaResponse.status !== 200 || phoneArenaResponse.status === 429) {
+        throw new Error('PhoneArena request failed');
       }
-    }));
+      
+      const $phoneArena = load(phoneArenaResponse.data);
+      const phoneArenaPhones = [];
+      
+      $phoneArena('.widget.widget-tilePhoneCard').each((_, element) => {
+        const $element = $phoneArena(element);
+        const link = $element.find('a').attr('href');
+        const titleText = $element.find('.caption .title').text().trim();
+        const [company, ...modelParts] = titleText.split(' ');
+        const model = modelParts.join(' ');
+        const imgSrc = $element.find('picture.square img').attr('src');
 
-    res.json(phoneArenaPhonesWithPrices);
+        phoneArenaPhones.push({
+          source: 'phonearena',
+          imgSrc,
+          name: company,
+          model,
+          link,
+          price: null
+        });
+      });
+
+      // Fetch prices for PhoneArena phones
+      const phoneArenaPhonesWithPrices = await Promise.all(phoneArenaPhones.map(async (phone) => {
+        try {
+          const detailsResponse = await axios.get(phone.link);
+          if (detailsResponse.status !== 200 || detailsResponse.status === 429) {
+            throw new Error('Details request failed');
+          }
+          const $details = load(detailsResponse.data);
+          const priceText = $details.find('th:contains("MSRP:")').next().text().trim();
+          const priceUSD = parseFloat(priceText.replace(/[^0-9.]/g, ''));
+          const priceSAR = await convertUSDtoSAR(priceUSD);
+
+          return {
+            ...phone,
+            price: priceSAR,
+            priceText: `${priceSAR.toFixed(2)} SAR`,
+            image: phone.imgSrc,
+            brand: phone.name,
+            year: minYear,
+            storage: `${storageSize}GB`,
+            display: `${minDisplay}-${maxDisplay} inches`,
+            battery: `${minBattery}-${maxBattery} mAh`,
+            features: ['4G LTE', 'Wi-Fi', 'Bluetooth', 'GPS']
+          };
+        } catch (error) {
+          console.error(`Error fetching price for ${phone.model}:`, error);
+          return {
+            ...phone,
+            price: 'N/A',
+            priceText: 'Price not available',
+            image: phone.imgSrc,
+            brand: phone.name,
+            year: minYear,
+            storage: `${storageSize}GB`,
+            display: `${minDisplay}-${maxDisplay} inches`,
+            battery: `${minBattery}-${maxBattery} mAh`,
+            features: ['4G LTE', 'Wi-Fi', 'Bluetooth', 'GPS']
+          };
+        }
+      }));
+
+      res.json(phoneArenaPhonesWithPrices);
+    } catch (error) {
+      console.error('Error in PhoneArena search:', error);
+      res.status(500).json({ error: 'Failed to fetch phone data from both sources' });
+    }
   } catch (error) {
     console.error('Error in search:', error);
     res.status(500).json({ error: 'Failed to fetch phone data' });
